@@ -12,12 +12,16 @@ if (POLICY CMP0048)
   cmake_policy(SET CMP0048 NEW)
 endif()
 
+message("CALL CMakeLists.txt in  third_party/pybind11")
+
+
 # CMake versions < 3.4.0 do not support try_compile/pthread checks without C as active language.
 if(CMAKE_VERSION VERSION_LESS 3.4.0)
   project(pybind11)
 else()
   project(pybind11 CXX)
 endif()
+
 
 # Check if pybind11 is being used directly or via add_subdirectory
 set(PYBIND11_MASTER_PROJECT OFF)
@@ -115,6 +119,7 @@ if(NOT (CMAKE_VERSION VERSION_LESS 3.0))  # CMake >= 3.0
   add_library(pybind11::embed ALIAS embed)
   target_link_libraries(embed INTERFACE pybind11::pybind11 $<BUILD_INTERFACE:${PYTHON_LIBRARIES}>)
 endif()
+
 
 if (PYBIND11_INSTALL)
   install(DIRECTORY ${PYBIND11_INCLUDE_DIR}/pybind11 DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

@@ -1,6 +1,21 @@
 
 # gpuRIR
 
+# kooBH : modification    
+error in installation  
+```
+Unsupported gpu architecture 'compute_30'
+```
+
+=>  
+
+specifed architecture  
+```cmake
+set(CMAKE_CUDA_FLAGS " -gencode arch=compute_80,code=sm_80")
+```
+
+
+
 **gpuRIR** is a free and open-source Python library for Room Impulse Response (RIR) simulation using the Image Source Method (ISM) with GPU acceleration. It can compute the RIRs between several source and receivers positions in parallel using CUDA GPUs. It is approximately 100 times faster than CPU implementations [[1]](#references).
 
 - [Prerequisites](#prerequisites)
