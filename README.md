@@ -1,7 +1,7 @@
 
 # gpuRIR
 
-# kooBH : modification    
+## kooBH : modification    
 error in installation  
 ```
 Unsupported gpu architecture 'compute_30'
@@ -13,6 +13,8 @@ specifed architecture
 ```cmake
 set(CMAKE_CUDA_FLAGS " -gencode arch=compute_80,code=sm_80")
 ```
+
+---
 
 
 
