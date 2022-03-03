@@ -6,9 +6,8 @@ the file 'filtered_signal.wav' with the stereo recording simulation.
 """
 import time
 import numpy as np
+import torch
 from scipy.io import wavfile
-
-
 
 tic = time.time()
 import gpuRIR
@@ -19,12 +18,14 @@ tic = time.time()
 fs, source_signal = wavfile.read('source_signal.wav')
 print("load wav : " + str(time.time()-tic)+ "sec")
 print("source signal : " + str(source_signal.shape))
+print("nframe : " + str(len(source_signal)/128))
 
 tic = time.time()
 room_sz = [8,4,2.5]  # Size of the room [m]
 
 ## NOTE : discrete trajectory points 
-traj_pts = 40  # Number of trajectory points
+traj_pts = 50  # Number of trajectory points
+nframe = int(np.ceil(len(source_signal/128)))
 
 pos_traj = np.tile(np.array([0.0,3.0,1.0]), (traj_pts,1))
 
@@ -32,8 +33,14 @@ pos_traj[:,0] = np.linspace(0.1, 7.9, traj_pts) # Positions of the trajectory po
 
 print("pos_traj : " + str(pos_traj.shape))
 
-nb_rcv = 2 # Number of receivers
-pos_rcv = np.array([[4.00,1.0,1.5],[4.3,1.0,1.5]])	 # Position of the receivers [m]
+nb_rcv = 4 # Number of receivers
+pos_rcv = np.array(
+    [
+        [4.00,1.00,1.50],
+        [4.00,1.00,1.50],
+        [4.00,1.00,1.50],
+        [4.00,1.00,1.50]
+    ])	 # Position of the receivers [m]
 
 pos_rcv = np.tile(pos_rcv, (traj_pts,1,1))
 
@@ -72,6 +79,10 @@ tic = time.time()
 for i in range(traj_pts) : 
     RIRs[i,:,:] = gpuRIR.simulateRIR(room_sz, beta, pos_traj, pos_rcv[i], nb_img, Tmax, fs, Tdiff=Tdiff, orV_rcv=orV_rcv, mic_pattern=mic_pattern)[i,:,:]
 print("RIRs : " +str(RIRs.shape))
+RIRs = RIRs.astype(np.float32)
+
+np.save("RIR.npy",RIRs)
+print("RIRs.dtype : "+str(RIRs.dtype))
 
 
 print("filter generated : " + str(time.time()-tic)+ "sec")
