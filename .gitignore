@@ -53,3 +53,6 @@ objectdb
 build/
 dist/
 gpuRIR.egg-info/
+
+# jupyter
+.ipynb_checkpoints
