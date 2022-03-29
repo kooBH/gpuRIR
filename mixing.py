@@ -12,13 +12,13 @@
 
 import pdb
 
-import gpuRIR
-gpuRIR.activateMixedPrecision(False)
+
 
 import time
 import numpy as np
 import torch
 from scipy.io import wavfile
+import librosa
 import json
 
 # Not to have crossed trajectory,
@@ -168,40 +168,6 @@ def gen_traj(room,n_src=4,n_traj=50):
 
     return traj_m, traj_s
 
-#    To Generate RIR filter    
-def gen_filter(room,traj_src,traj_mic,beta,n_img,RT60, Tmax,Tdiff,orV_rcv,mic_pattern,n_rec=4,fs=16000):
-    n_traj_pts =  traj_mic.shape[1]
-    len_filter =  int(fs * RT60)
-
-    n_src = len(traj_src)
-
-    RIR = np.zeros((n_traj_pts,n_rec,len_filter))
-    #print("traj_src : "+str(traj_src.shape))
-    #print("traj_mic : "+str(traj_mic.shape))
-    #print('RIRs : ' + str(RIRs.shape))
-
-    # fixed src, fixed mic
-
-    # fixed src, moving mic
-
-    # moving sr, moving mic
-
-    # moving src, moving mic
-
-    for i in range(n_traj_pts) : 
-        # [traj,src,rec,filter]
-        # TODO : need to fix fitler length dismatch problem
-        # RT60 * fs != filter length
-
-        RIR[i,:,:len_filter] = gpuRIR.simulateRIR(room, beta, traj_src, traj_mic[:,i,:], n_img, Tmax, fs, Tdiff=Tdiff, orV_rcv=orV_rcv, mic_pattern=mic_pattern)[i,:,:len_filter]
-
-        #print("traj_src : "+str(traj_src.shape))
-        #print("traj_mic : "+str(traj_mic.shape))
-        #print("RIR : "+str(RIR.shape))
-
-    return RIR
-
-
 #    To load generated RIR filter
 def load_filter(path_filter):
     raise Exception("ERROR::load_filter() not implemented")
@@ -221,7 +187,7 @@ def mix(
     sources,
     SIRs,
     trajs_src,
-    trajs_mic,
+    traj_mic,
     path_filter=None,
     noise=None,
     RT60=0.5,
@@ -240,6 +206,12 @@ def mix(
         raise Exception("len(SIRs) {} != len(sources) {}".format(len(SIRs),len(sources)))
     orV_rcv = None
 
+    # https://github.com/DavidDiazGuerra/gpuRIR/issues/13
+    # Note that the gpuRIR should be imported inside func otherwise you get an "Incorrect Initialization" Error.
+    import gpuRIR
+    gpuRIR.activateMixedPrecision(False)
+    gpuRIR.activateLUT(True)
+
     # Reflection coefficients
     beta = gpuRIR.beta_SabineEstimation(room, RT60) 
     # Time to start the diffuse reverberation model [s]
@@ -251,7 +223,7 @@ def mix(
 
     len_traj = trajs_src.shape[1]
     n_src = len(sources)
-    n_mic = trajs_mic.shape[0]
+    n_mic = traj_mic.shape[0]
     len_RIR = int(fs*RT60)
 
     #for i in range(n_src) : 
@@ -265,7 +237,10 @@ def mix(
     # RIR
     if path_filter is None : 
         for i in range(n_src) : 
-            RIRs[i,:,:,:] = gen_filter(room,trajs_src[i],trajs_mic, beta=beta,n_img=n_img,RT60=RT60,Tmax=Tmax  ,Tdiff=Tdiff,orV_rcv=orV_rcv,mic_pattern=mic_pattern,fs=fs)
+            for j in range(len_traj) : 
+                # TODO : need to fix fitler length dismatch problem
+                # RT60 * fs != filter length
+                RIRs[i,j,:,:len_RIR] = gpuRIR.simulateRIR(room, beta, trajs_src[i], traj_mic[:,j,:], n_img, Tmax, fs, Tdiff=Tdiff, orV_rcv=orV_rcv, mic_pattern=mic_pattern)[j,:,:len_RIR]
     else : 
         RIRs = load_filter(path_filter)
 
@@ -345,7 +320,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
 
     # load files 
     for path in path_sources :
-        fs, raw = wavfile.read(path)
+        raw, fs = librosa.load(path,mono=True,sr=16000)
         raws.append(raw)
         if len_max < len(raw) : 
             len_max = len(raw)
@@ -355,7 +330,12 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
 
     meta = {}
     meta["n_src"]=n_src
+    meta["sources"]=path_sources
     #print(n_src)
+
+    # need to know RT60 to calculate audio length
+    RT60 = np.random.uniform(low=0.1, high=0.8, size=None) 
+    meta["RT60"]=RT60
     
     ## Matching length of sources
     # comapct
@@ -363,6 +343,26 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         for i in range(n_src) :
             idx_start = int(len(raws[i])/2 - len_min/2)
             raws[i] = raws[i][idx_start:idx_start+len_min]
+        len_signals = len_min
+        sec = int(len_signal/fs)
+    # minimum 4 sec : 250-frame in 256-shift 16kHz
+    elif match == "4sec":
+        sec = 4
+        len_min = int(fs * sec - RT60*fs)
+        for i in range(n_src) :
+            # cut
+            if len(raws[i]) >= len_min : 
+                idx_start = np.random.randint(low=0,high=len(raws[i])-len_min)
+                raws[i] = raws[i][idx_start:idx_start+len_min]
+                meta["padding_"+str(i)]=[-1,-1]
+            # pad
+            else:
+                short =  len_min - len(raws[i])
+                pre_pad = np.random.randint(low=0,high=short) 
+                post_pad = short - pre_pad
+                raws[i] = np.pad(raws[i],(pre_pad,post_pad))
+                meta["padding_"+str(i)]=[pre_pad,post_pad]
+
         len_signals = len_min
     # TODO
     elif match == 'max':
@@ -375,13 +375,15 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     else :
         raise Exception("ERROR:generate(), unsupported matching method : {}".format(match))
 
+    len_target = sec*fs
+
     # Debug : raws
     #for i in range(n_src):
     #    wavfile.write(path_out+"/tmp_"+str(i)+".wav", fs, raws[i])
     n_frame = int(np.ceil(len_signals/shift))
 
     # generate room
-    room = np.random.uniform(low=[5,5,3.0],high=[10,10,3.5])
+    room = np.random.uniform(low=[5,5,2.5],high=[10,10,3.5])
     meta["room"]=room
 
     #s_idx = np.arange(n_src)
@@ -402,8 +404,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     meta["traj_s"] = traj_s
     #meta["s_idx"] = s_idx
 
-    SIRs = np.random.uniform(low=0, high=10, size=n_src)
-    RT60 = np.random.uniform(low=0.5, high=0.7, size=None) 
+    SIRs = np.random.uniform(low=0, high=15, size=n_src)
     signal,SIRs = mix(raws,SIRs,traj_s,traj_mm,room=room, RT60=RT60) 
     meta["SIRs"]=SIRs
 
@@ -433,10 +434,20 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         elevation = np.arctan(dist/(traj_adj[i,:,2] - traj_m_adj[:,2] ))
         meta["azimuth_"+str(i)] = np.degrees(aizmuth)
         meta["elevation_"+str(i)]= np.degrees(elevation)
+
+    ## Match final audio output length
+    if len(signal) < len_target :
+        short = len_target - len(signal)
+        signal = np.pad(signal,((0,short),(0,0)))
+    elif len(signal) > len_target :
+        over = len(signal) - len_target
+        signal = signal[:-over]
+    else :
+        pass
      
     ## save
-    wavfile.write(path_out+"/"+id_file+".wav", fs, signal)
-    with open(path_out+"/"+id_file+".json", 'w') as f:
+    wavfile.write(path_out+"/"+str(id_file)+".wav", fs, signal)
+    with open(path_out+"/"+str(id_file)+".json", 'w') as f:
         json.dump(meta, f, indent=2,cls=NumpyEncoder)
 
 class NumpyEncoder(json.JSONEncoder):

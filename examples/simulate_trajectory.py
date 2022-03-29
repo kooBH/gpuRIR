@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+import pdb
+
 """ Example for simulating the recording of a moving source with a microphone array.
 You need to have a 'source_signal.wav' audio file to use it as source signal and it will generate
 the file 'filtered_signal.wav' with the stereo recording simulation.
@@ -11,7 +14,7 @@ from scipy.io import wavfile
 import gpuRIR
 gpuRIR.activateMixedPrecision(False)
 
-fs, source_signal = wavfile.read('source_signal.wav')
+fs, source_signal = wavfile.read('../sample/male_1.wav')
 
 room_sz = [3,4,2.5]  # Size of the room [m]
 traj_pts = 64  # Number of trajectory points
@@ -32,5 +35,10 @@ nb_img = gpuRIR.t2n( Tdiff, room_sz )	# Number of image sources in each dimensio
 RIRs = gpuRIR.simulateRIR(room_sz, beta, pos_traj, pos_rcv, nb_img, Tmax, fs, Tdiff=Tdiff, orV_rcv=orV_rcv, mic_pattern=mic_pattern)
 filtered_signal = gpuRIR.simulateTrajectory(source_signal, RIRs)
 wavfile.write('filtered_signal.wav', fs, filtered_signal)
-plt.plot(filtered_signal)
-plt.show()
+
+print("pos_traj : "+str(pos_traj.shape))
+print("pos_rcv : "+str(pos_rcv.shape))
+print("RIRS : "+str(RIRs.shape))
+
+#plt.plot(filtered_signal)
+#plt.show()
