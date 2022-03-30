@@ -305,6 +305,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         raise Exception("ERORR:Maximum number of sources is 4.")
 
     raws = []
+    meta = {}
     len_max = 0
     len_min = 1e16
 
@@ -316,6 +317,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         [+0.04,+0.04,0.00]
     ]
     pos_mic = np.expand_dims(pos_mic,1)
+    meta["pos_mic"]=pos_mic
     n_rec = len(pos_mic)
 
     # load files 
@@ -328,7 +330,6 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
             len_min = len(raw)
     n_src = len(raws)
 
-    meta = {}
     meta["n_src"]=n_src
     meta["sources"]=path_sources
     #print(n_src)
@@ -338,6 +339,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     meta["RT60"]=RT60
     
     ## Matching length of sources
+    padding=[]
     # comapct
     if  match == "min":
         for i in range(n_src) :
@@ -352,17 +354,17 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         for i in range(n_src) :
             # cut
             if len(raws[i]) >= len_min : 
-                idx_start = np.random.randint(low=0,high=len(raws[i])-len_min)
+                idx_start = np.random.randint(low=0,high=len(raws[i])-len_min+1)
                 raws[i] = raws[i][idx_start:idx_start+len_min]
-                meta["padding_"+str(i)]=[-1,-1]
+                padding.append([-1,-1])
             # pad
             else:
                 short =  len_min - len(raws[i])
-                pre_pad = np.random.randint(low=0,high=short) 
+                pre_pad = np.random.randint(low=0,high=short+1) 
                 post_pad = short - pre_pad
                 raws[i] = np.pad(raws[i],(pre_pad,post_pad))
-                meta["padding_"+str(i)]=[pre_pad,post_pad]
-
+                padding.append([pre_pad,post_pad])
+        meta["padding"]=padding
         len_signals = len_min
     # TODO
     elif match == 'max':
@@ -380,7 +382,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     # Debug : raws
     #for i in range(n_src):
     #    wavfile.write(path_out+"/tmp_"+str(i)+".wav", fs, raws[i])
-    n_frame = int(np.ceil(len_signals/shift))
+    n_frame = int(np.ceil(len_target/shift))
 
     # generate room
     room = np.random.uniform(low=[5,5,2.5],high=[10,10,3.5])
@@ -427,14 +429,28 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         traj_adj[:,idx_adj:idx_adj+len_rep:,:] = traj_s[:,i:i+1,:]
         idx_adj += len_rep
 
+    azimuth = np.zeros((n_src,n_frame))
+    elevation = np.zeros((n_src,n_frame))
     # Calculate Angle of Direct Path
     for i in range(n_src) : 
-        dist = np.sqrt(np.power(traj_m_adj[:,0]-traj_adj[i,:,0],2) + np.power(traj_m_adj[:,1]-traj_adj[i,:,1],2))
-        aizmuth = np.arctan((traj_m_adj[:,1]-traj_adj[i,:,1])/(traj_m_adj[:,0]-traj_adj[i,:,0]))
-        elevation = np.arctan(dist/(traj_adj[i,:,2] - traj_m_adj[:,2] ))
-        meta["azimuth_"+str(i)] = np.degrees(aizmuth)
-        meta["elevation_"+str(i)]= np.degrees(elevation)
+        for j in range(n_frame) : 
+            dist = np.sqrt(np.power(traj_m_adj[j,0]-traj_adj[i,j,0],2) + np.power(traj_m_adj[j,1]-traj_adj[i,j,1],2))
 
+            # azimuth
+            tmp = np.arctan((traj_m_adj[j,1]-traj_adj[i,j,1])/(traj_m_adj[j,0]-traj_adj[i,j,0]))
+            if traj_m_adj[j,0]  < traj_adj[i,j,0] : 
+                azimuth[i,j] = 90 - np.degrees(tmp)
+            else : 
+                azimuth[i,j] = - 90 - np.degrees(tmp)
+            # elevation
+            tmp = np.arctan(dist/(traj_adj[i,j,2] - traj_m_adj[j,2] ))
+            if traj_m_adj[j,2] < traj_adj[i,j,2] :
+                elevation[i,j] = 90 - np.degrees(tmp)
+            else :
+                elevation[i,j] = - 90 - np.degrees(tmp)
+
+    meta["azimuth"] = azimuth
+    meta["elevation"]= elevation
     ## Match final audio output length
     if len(signal) < len_target :
         short = len_target - len(signal)
