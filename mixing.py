@@ -160,7 +160,7 @@ def gen_traj(room,n_src=4,n_traj=50):
     #print("room : {}".format(room))
     #print("pts_m {}".format(pts_m))
     for i in range(n_src) :
-        ps = np.random.choice(range(3*i,3*i+4),2)
+        ps = np.random.choice(range(3*i,3*i+3),2)
 
         pts_s = np.random.uniform(low=parts[ps[0],0,:],high=parts[ps[1],1,:],size=(2,3))
         #print("pts_s[{}] {}".format(i,pts_s))
@@ -283,14 +283,18 @@ def mix(
         signals[i] = signals[i]*weight
     signal = np.sum(np.array(signals),axis=0)
 
+
+
     ## Normalization
     signal = signal/np.expand_dims(np.max(np.abs(signal),axis=0),axis=0)
+    for i in range(n_src) : 
+        signals[i] = signals[i]/np.max(np.abs(signals[i]))
 
     # Debug : SIR
     #for i in range(n_src) : 
     #    wavfile.write(path_out+"/tmp_"+str(i)+".wav", fs, signals[i])
 
-    return signal,SIRs
+    return signal,signals,SIRs
 
 def diffuse():
     pass
@@ -407,7 +411,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     #meta["s_idx"] = s_idx
 
     SIRs = np.random.uniform(low=0, high=15, size=n_src)
-    signal,SIRs = mix(raws,SIRs,traj_s,traj_mm,room=room, RT60=RT60) 
+    signal,signals,SIRs = mix(raws,SIRs,traj_s,traj_mm,room=room, RT60=RT60) 
     meta["SIRs"]=SIRs
 
     ## Save angles in label
@@ -463,6 +467,9 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
      
     ## save
     wavfile.write(path_out+"/"+str(id_file)+".wav", fs, signal)
+    for i in range(n_src):
+        wavfile.write(path_out+"/"+str(id_file)+"_"+str(i)+".wav", fs, signals[i][:,0])
+
     with open(path_out+"/"+str(id_file)+".json", 'w') as f:
         json.dump(meta, f, indent=2,cls=NumpyEncoder)
 
