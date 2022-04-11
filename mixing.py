@@ -320,8 +320,9 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
         [+0.04,-0.04,0.00],
         [+0.04,+0.04,0.00]
     ]
-    pos_mic = np.expand_dims(pos_mic,1)
     meta["pos_mic"]=pos_mic
+    # expand dim for matrix operation
+    pos_mic = np.expand_dims(pos_mic,1)
     n_rec = len(pos_mic)
 
     # load files 
@@ -459,9 +460,13 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     if len(signal) < len_target :
         short = len_target - len(signal)
         signal = np.pad(signal,((0,short),(0,0)))
+        for i in range(n_src) : 
+            signals[i] = np.pad(signals[i],((0,short),(0,0)))
     elif len(signal) > len_target :
         over = len(signal) - len_target
         signal = signal[:-over]
+        for i in range(n_src) : 
+            signals[i] = signals[i][:-over]
     else :
         pass
      
@@ -469,6 +474,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     wavfile.write(path_out+"/"+str(id_file)+".wav", fs, signal)
     for i in range(n_src):
         wavfile.write(path_out+"/"+str(id_file)+"_"+str(i)+".wav", fs, signals[i][:,0])
+
 
     with open(path_out+"/"+str(id_file)+".json", 'w') as f:
         json.dump(meta, f, indent=2,cls=NumpyEncoder)
