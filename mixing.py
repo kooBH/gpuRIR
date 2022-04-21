@@ -57,7 +57,7 @@ import json
 #  1  2  3  4 
 # 0           x
 #
-def gen_traj(room,n_src=4,n_traj=50):
+def gen_traj(room,n_src=4,n_traj=50,fix=False):
     ratio_mic = np.random.uniform(low=0.3,high=0.5)
     
     # adjust to avoid wall attachment
@@ -149,9 +149,14 @@ def gen_traj(room,n_src=4,n_traj=50):
 
     # gen traj
     traj_m = np.zeros((n_traj,3))
-    traj_m[:,0] = np.linspace(pts_m[0,0],pts_m[1,0],n_traj)
-    traj_m[:,1] = np.linspace(pts_m[0,1],pts_m[1,1],n_traj)
-    traj_m[:,2] = np.linspace(pts_m[0,2],pts_m[1,2],n_traj)
+    if not fix :
+        traj_m[:,0] = np.linspace(pts_m[0,0],pts_m[1,0],n_traj)
+        traj_m[:,1] = np.linspace(pts_m[0,1],pts_m[1,1],n_traj)
+        traj_m[:,2] = np.linspace(pts_m[0,2],pts_m[1,2],n_traj)
+    else :
+        traj_m[:,0] = pts_m[0,0]
+        traj_m[:,1] = pts_m[0,1]
+        traj_m[:,2] = pts_m[0,2]
 
     ## Soruces trajectory
     traj_s = np.zeros((n_src,n_traj,3))
@@ -164,7 +169,10 @@ def gen_traj(room,n_src=4,n_traj=50):
 
         pts_s = np.random.uniform(low=parts[ps[0],0,:],high=parts[ps[1],1,:],size=(2,3))
         #print("pts_s[{}] {}".format(i,pts_s))
-        traj_s[i,:,:]=np.linspace(pts_s[0],pts_s[1],n_traj)    
+        if not fix :
+            traj_s[i,:,:]=np.linspace(pts_s[0],pts_s[1],n_traj)    
+        else :
+            traj_s[i,:,:] = pts_s[0]  
 
     return traj_m, traj_s
 
@@ -303,7 +311,16 @@ def diffuse():
 To generate random output
 
 '''
-def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->None:
+def generate(
+    path_out,
+    path_sources,
+    id_file,
+    n_traj = 50,
+    match="min",
+    shift=128,
+    max_SIR=15,
+    fix = False
+    )->None:
 
     if len(path_sources) > 4:
         raise Exception("ERORR:Maximum number of sources is 4.")
@@ -371,6 +388,24 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
                 padding.append([pre_pad,post_pad])
         meta["padding"]=padding
         len_signals = len_min
+    elif match == "1sec" :
+        sec = 1
+        len_min = int(fs * sec - RT60*fs)  
+        for i in range(n_src) :
+            # cut
+            if len(raws[i]) >= len_min : 
+                idx_start = np.random.randint(low=0,high=len(raws[i])-len_min+1)
+                raws[i] = raws[i][idx_start:idx_start+len_min]
+                padding.append([-1,-1])
+            # pad
+            else:
+                short =  len_min - len(raws[i])
+                pre_pad = np.random.randint(low=0,high=short+1) 
+                post_pad = short - pre_pad
+                raws[i] = np.pad(raws[i],(pre_pad,post_pad))
+                padding.append([pre_pad,post_pad])
+        meta["padding"]=padding
+        len_signals = len_min
     # TODO
     elif match == 'max':
         raise Exception("Unimplemented")
@@ -398,8 +433,8 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
 #    s_idx = s_idx[:n_src]
     signals = []
 
-    # trajectory allocation
-    traj_m,traj_s = gen_traj(room,n_src)
+    ### trajectory allocation ###
+    traj_m,traj_s = gen_traj(room,n_src,fix=fix)
     traj_mm = np.tile(traj_m,(n_rec,1,1))
 
     traj_mm = traj_mm + pos_mic
@@ -411,7 +446,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     meta["traj_s"] = traj_s
     #meta["s_idx"] = s_idx
 
-    SIRs = np.random.uniform(low=0, high=15, size=n_src)
+    SIRs = np.random.uniform(low=0, high=max_SIR, size=n_src)
     signal,signals,SIRs = mix(raws,SIRs,traj_s,traj_mm,room=room, RT60=RT60) 
     meta["SIRs"]=SIRs
 
@@ -473,7 +508,7 @@ def generate(path_out,path_sources,id_file,n_traj = 50,match="min",shift=128)->N
     ## save
     wavfile.write(path_out+"/"+str(id_file)+".wav", fs, signal)
     for i in range(n_src):
-        wavfile.write(path_out+"/"+str(id_file)+"_"+str(i)+".wav", fs, signals[i][:,0])
+        wavfile.write(path_out+"/"+str(id_file)+"_"+str(i)+".wav", fs, signals[i][:,:])
 
 
     with open(path_out+"/"+str(id_file)+".json", 'w') as f:
