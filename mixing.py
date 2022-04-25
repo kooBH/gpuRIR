@@ -319,7 +319,8 @@ def generate(
     match="min",
     shift=128,
     max_SIR=15,
-    fix = False
+    max_RT60=0.8,
+    fix = False,
     )->None:
 
     if len(path_sources) > 4:
@@ -357,7 +358,7 @@ def generate(
     #print(n_src)
 
     # need to know RT60 to calculate audio length
-    RT60 = np.random.uniform(low=0.1, high=0.8, size=None) 
+    RT60 = np.random.uniform(low=0.1, high=max_RT60, size=None) 
     meta["RT60"]=RT60
     
     ## Matching length of sources
